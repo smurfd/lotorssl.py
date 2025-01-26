@@ -25,7 +25,7 @@ jobs:
       - name: Generate cert
         run: mkdir .lib && openssl req -newkey rsa:4096 -nodes -keyout .lib/selfsigned.key -x509 -days 36500 -out .lib/selfsigned.cert -subj "/C=US/ST=NRW/L=Earth/O=CompanyName/OU=IT/CN=localhost/emailAddress=email@example.com"
       - name: Test with pytest
-        run: python -m pytest lotordb/test
+        run: python -m pytest lotorssl/test
 
   build-latest:
 
@@ -45,4 +45,4 @@ jobs:
       - name: Generate cert
         run: mkdir .lib && openssl req -newkey rsa:4096 -nodes -keyout .lib/selfsigned.key -x509 -days 36500 -out .lib/selfsigned.cert -subj "/C=US/ST=NRW/L=Earth/O=CompanyName/OU=IT/CN=localhost/emailAddress=email@example.com"
       - name: Test with pytest
-        run: python -m pytest lotordb/test
+        run: python -m pytest lotorssl/test
