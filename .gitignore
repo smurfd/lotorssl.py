@@ -1,0 +1,8 @@
+.pytest_cache/
+.mypy_cache/
+.ruff_cache
+*.egg-info/
+*/__pycache__
+*/test/__pycache__
+.lib/
+.python-version
