@@ -1,10 +1,12 @@
 import socket, random, threading, ast, os
 
 # Generate public and private keypair
-def genkeypair(g, p): priv = prim(); return (g ** priv) % p, priv
+def genkeypair(g, p):
+  priv = prim(); return (g ** priv) % p, priv
 
 # Generate shared key
-def genshare(pub, priv, p): return (pub ** priv) % p
+def genshare(pub, priv, p):
+  return (pub ** priv) % p
 
 # Generate Alice and Bobs keypair and assert shared key is the same
 def keypair():
@@ -14,10 +16,12 @@ def keypair():
   assert(genshare(apub, bpriv, p) == genshare(bpub, apriv, p))
 
 # Encrypt data and return
-def crypt(m, k): return "".join(chr(ord(i)^int(str(k), 16)) for i in m).encode()
+def crypt(m, k): # TODO: use actual cryptography
+  return "".join(chr(ord(i)^int(str(k), 16)) for i in m).encode()
 
 # Return random number in range of seednumber
-def rnd(): return random.randint(1337, 31337)
+def rnd():
+  return random.randint(1337, 31337)
 
 # Return random prime number
 def prim():
@@ -56,7 +60,9 @@ def work(thrd):
     except (KeyboardInterrupt, SystemExit): threading.Event().set(); os._exit(9)
 
 # Thread worker
-def worker(fnc): t = threading.Thread(target=fnc, name=fnc); t.start(); work(t)
+def worker(fnc):
+  t = threading.Thread(target=fnc, name=fnc); t.start(); work(t)
 
 # Return the byte map
-def liteval(b): return ast.literal_eval(b.decode())
+def liteval(b):
+  return ast.literal_eval(b.decode())

@@ -3,8 +3,8 @@
 ### Run the python version
 In two different terminals run
 ```
-python3 lightcrypto_server.py
+python3 lotorssl_server.py
 ```
 ```
-python3 lightcrypto_client.py
+python3 lotorssl_client.py
 ```
