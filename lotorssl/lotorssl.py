@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
-import secrets, hashlib, math, socket, threading, ast, os
-import signal, ssl, sys
+import secrets, hashlib, math, socket, threading, ast, os, signal, ssl, sys
 from socketserver import TCPServer, ThreadingMixIn, StreamRequestHandler
-from typing import Union, Any, Self
+from typing import Union, Any
 
 class Curve:                                                              # Secp256k1 Curve parameters
-  a = 0                                                                   # Curve coefficients
-  b = 7
-  h = 1                                                                   # Group cofactor
+  a, b, h = 0, 7, 1                                                       # Curve coefficients (a, b) & Group cofactor (h)
   g=(0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798,  # Base point x, y
      0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8)
   n=0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141    # Group order
@@ -22,10 +19,9 @@ class Curve:                                                              # Secp
 
 class CurveMath(Curve):
   def __init__(self): pass
-
   def inverse_mod(self, k, p):
     if (k == 0): raise ZeroDivisionError('Divison by zero. Not good!')
-    elif (k < 0): return p - self.inverse_mod(self, -k, p)
+    elif (k < 0): return p - self.inverse_mod(-k, p)
     r, olr, s, ols, t, olt = p, k, 0, 1, 1, 0
     while (r):
       quot = olr // r
@@ -38,45 +34,45 @@ class CurveMath(Curve):
     return x % p
 
 
-class PointMath(CurveMath):
-  def __init__(self): pass
+class PointMath:
+  def __init__(self):
+    self.cm = CurveMath()
+    self.curve = Curve()
 
   def point_add(self, R, Q):
-    assert Curve.on_curve(Curve, R)
-    assert Curve.on_curve(Curve, Q)
-    if R == None: return Q # if point1 is None, return point2
-    elif Q == None: return R # if point2 is None, return point1
+    assert self.curve.on_curve(R)
+    assert self.curve.on_curve(Q)
+    if R == None or R == (0,0): return Q # if point1 is None, return point2
+    elif Q == None or Q == (0,0): return R # if point2 is None, return point1
     x1, y1 = R
     x2, y2 = Q
-    if x1 == 0 and y1 == 0: return Q
-    if x2 == 0 and y2 == 0: return R
-    if x2 == x1 and y2 == (-y1 % Curve.p): return (0, 0)
-    if R != Q: m = int(((y2 - y1) * self.inverse_mod(self, x2 - x1, Curve.p)) % Curve.p)
-    else: m = int(((3 * x1 ** 2 + Curve.a) * self.inverse_mod(self, 2 * y1, Curve.p)) % Curve.p)
-    x3 = (m * m - x1 - x2) % Curve.p
-    y3 = -(y1 + m * (x3 - x1) % Curve.p)
+    if x2 == x1 and y2 == (-y1 % self.curve.p): return (0, 0)
+    if R != Q: m = int(((y2 - y1) * self.cm.inverse_mod(x2 - x1, self.curve.p)) % self.curve.p)
+    else: m = int(((3 * x1 ** 2 + self.curve.a) * self.cm.inverse_mod(2 * y1, self.curve.p)) % self.curve.p)
+    x3 = (m * m - x1 - x2) % self.curve.p
+    y3 = -(y1 + m * (x3 - x1) % self.curve.p)
     return (x3, y3)
 
   def point_mul(self, r, s, p):
     r0, r1 = (0, 0), r
     for i in range(math.ceil(math.log(s + 1, 2)) - 1, -1, -1):
       if ((s & (1 << i)) >> i) == 0:
-        r1 = PointMath.point_add(self, r0, r1)
-        r0 = PointMath.point_add(self, r0, r0)
+        r1 = self.point_add(r0, r1)
+        r0 = self.point_add(r0, r0)
       else:
-        r0 = PointMath.point_add(self, r0, r1)
-        r1 = PointMath.point_add(self, r1, r1)
+        r0 = self.point_add(r0, r1)
+        r1 = self.point_add(r1, r1)
     return r0
 
   def scalar_mul(self, k, point):
-    if k % Curve.n == 0 or point == None: return None
-    if k < 0: return self.scalar_mul(self, -k, point_neg(point))
+    if k % self.curve.n == 0 or point == None: return None
+    if k < 0: return self.scalar_mul(-k, point_neg(point))
     ret, add = None, point
     while k:
-      if k & 1: ret = PointMath.point_add(self, ret, add)
-      add = PointMath.point_add(self, add, add)
+      if k & 1: ret = self.point_add(ret, add) # Add to result
+      add = self.point_add(add, add) # Double
       k >>= 1
-    assert Curve.on_curve(Curve, ret)
+    assert self.curve.on_curve(ret)
     return ret
 
 
@@ -97,12 +93,8 @@ class Server(threading.Thread):
       ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER) # TODO: use our own instead
       ctx.load_cert_chain('.lib/selfsigned.cert', '.lib/selfsigned.key')
       return ctx.wrap_socket(sock=newsocket, server_side=True), fromaddr
-
-  class ThreadingTCPServerSSL(ThreadingMixIn, TCPServerSSL):
-    pass
-
-  class ServiceExit(Exception):
-    pass
+  class ThreadingTCPServerSSL(ThreadingMixIn, TCPServerSSL): pass
+  class ServiceExit(Exception): pass
 
   class Listener:
     def __init__(self, host, port, handler=None, test=False) -> None:
@@ -160,14 +152,12 @@ class Client(threading.Thread):
 
   def __init__(self, dbhost: str = 'localhost', dbport: int = 1337, dbmaster: bool = True, dbnode: int = 0, dbtype: Union[bool, str] = False) -> None:
     threading.Thread.__init__(self, group=None)
-    #self.client = Union[None, Client]
     self.event = threading.Event()
     self.host: str = dbhost
     self.port: int = dbport
     self.sock: Union[socket.socket, Any] = None
     self.type: Union[bool, str] = dbtype
     self.key: Union[None, Keys] = None
-    #self.tables: Union[None, Tables] = None
     self.thread = threading.Thread()
 
   def send(self, data: bytes) -> None:
@@ -177,14 +167,19 @@ class Client(threading.Thread):
     self.sock.recv(data) if self.sock else None
 
 class TLS:
-  def sign(k, msg):
+  def __init__(self):
+    self.cm = CurveMath()
+    self.pm = PointMath()
+    self.curve = Curve()
+
+  def sign(self, k, msg):
     u = secrets.SystemRandom().randrange(1, Curve.n)
     hash1 = int.from_bytes(hashlib.sha256(msg.encode('utf-8')).digest(), 'big')
     while (True):
-      p = PointMath.point_mul(PointMath, Curve.g, u, Curve.p)
+      p = self.pm.point_mul(Curve.g, u, Curve.p)
       c = p[0] % Curve.n
       if c == 0: continue
-      m = CurveMath.inverse_mod(CurveMath, u, Curve.n)
+      m = self.cm.inverse_mod(u, Curve.n)
       kc = k * c
       h = kc + hash1
       d = (m * h) % Curve.n
@@ -192,27 +187,27 @@ class TLS:
       break
     return (c, d)
 
-  def verify(pub, sig, msg):
+  def verify(self, pub, sig, msg):
     hash1 = int.from_bytes(hashlib.sha256(msg.encode('utf-8')).digest(), 'big')
-    h = CurveMath.inverse_mod(CurveMath, sig[1], Curve.n)
+    h = self.cm.inverse_mod(sig[1], Curve.n)
     h1 = (hash1 * h) % Curve.n
     h2 = (sig[0] * h) % Curve.n
-    p1 = PointMath.scalar_mul(PointMath, h1, (Curve.g[0], Curve.g[1]))
-    p2 = PointMath.scalar_mul(PointMath, h2, pub)
-    P = PointMath.point_add(PointMath, p1, p2)
+    p1 = self.pm.scalar_mul(h1, (Curve.g[0], Curve.g[1]))
+    p2 = self.pm.scalar_mul(h2, pub)
+    P = self.pm.point_add(p1, p2)
     return (P[0] % Curve.n) == sig[0]
 
-  def genkeypair():
+  def genkeypair(self):
     priv = secrets.SystemRandom().randrange(1, Curve.n) - 1
-    publ = PointMath.scalar_mul(CurveMath, priv, (Curve.g[0], Curve.g[1]))
+    publ = self.pm.scalar_mul(priv, (Curve.g[0], Curve.g[1]))
     return priv, publ
 
-  def gensharedsecret(priv, pub):
-    return PointMath.scalar_mul(CurveMath, priv, pub)
+  def gensharedsecret(self, priv, pub):
+    return self.pm.scalar_mul(priv, pub)
 
-  def verifysharedsecret(alshr, boshr, alpriv, bopriv):
+  def verifysharedsecret(self, alshr, boshr, alpriv, bopriv):
     priv = (alpriv * bopriv) % Curve.n
-    r = PointMath.scalar_mul(CurveMath, priv, (Curve.g[0], Curve.g[1]))
+    r = self.pm.scalar_mul(priv, (Curve.g[0], Curve.g[1]))
     return r[0] == alshr[0]
 
 
@@ -260,15 +255,16 @@ def liteval(b):
 
 
 if __name__ == '__main__':
-  print(f'Basepoint: ({hex(Curve.g[0])}, {hex(Curve.g[1])})')
-  ap, a = TLS.genkeypair()
-  bp, b = TLS.genkeypair()
+  t = TLS()
+  print(f'Basepoint: ({hex(t.curve.g[0])}, {hex(t.curve.g[1])})')
+  ap, a = t.genkeypair()
+  bp, b = t.genkeypair()
   print(f'Alices secret key: {hex(ap)} and public key: ({hex(a[0])}, {hex(a[1])})')
   print(f'Bobs secret key: {hex(bp)} and public key: ({hex(b[0])}, {hex(b[1])})')
-  ash = TLS.gensharedsecret(ap, b)
-  bsh = TLS.gensharedsecret(bp, a)
+  ash = t.gensharedsecret(ap, b)
+  bsh = t.gensharedsecret(bp, a)
   print(f'Alices & Bobs shared secrets: {hex(ash[0]), hex(ash[1])} & {hex(bsh[0]), hex(bsh[1])}')
-  print(f'Their shared secrets match: {TLS.verifysharedsecret(ash, bsh, ap, bp)}')
-  s = TLS.sign(bp, 'hai wurld!')
-  assert TLS.verify(b, s, 'hai wurld!')
+  print(f'Their shared secrets match: {t.verifysharedsecret(ash, bsh, ap, bp)}')
+  s = t.sign(bp, 'hai wurld!')
+  assert t.verify(b, s, 'hai wurld!')
 
